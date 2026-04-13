@@ -1,7 +1,7 @@
 /******************************************************************************
 
     N'gine Lib for C++
-    *** Version 1.21.0+stable ***
+    *** Version 1.22.0-wip_0x01 ***
     Definiciones de prototipos
 
     Proyecto iniciado el 1 de Febrero del 2016
@@ -47,16 +47,17 @@
 
 
 /*** Includes ***/
+#include <SDL.h>
 #include <SFML/Audio.hpp>
 
 
 
 /*** Version de N'gine ***/
 static const int32_t NGN_VERSION_MAJOR = 1;                             // Version mayor
-static const int32_t NGN_VERSION_MINOR = 21;                            // Version menor
+static const int32_t NGN_VERSION_MINOR = 22;                            // Version menor
 static const int32_t NGN_VERSION_PATCH = 0;                             // Version parche
-static const std::string NGN_VERSION_MD_CHAR = "+";                     // Caracter de metadatos "-" = prerelease, "+" = stable
-static const std::string NGN_VERSION_METADATA = "stable";               // Version metadatos
+static const std::string NGN_VERSION_MD_CHAR = "-";                     // Caracter de metadatos "-" = prerelease, "+" = stable
+static const std::string NGN_VERSION_METADATA = "wip_0x01";             // Version metadatos
 
 /*** Definiciones generales ***/
 static const int32_t NGN_DEFAULT_VALUE = 0x7FFFFFFF;            // Valor de "defecto"
@@ -336,8 +337,13 @@ class NGN_TextFont {
         // Destructor
         ~NGN_TextFont();
 
-        // Vector contenedor de los 256 caracteres de la fuente
-        std::vector<NGN_TextureData*> character;
+        // Textura con el atlas con los caracteres (Siempre sera un GRID de 16x16, 256 caracteres)
+        SDL_Texture* characters_atlas;          // Almacena el Tileset
+
+        // Almacen de los tamaños de cada caracter
+        Size2I32 cell_size;                     // Tamaño de la celda del caracter en el atlas
+        Size2I32 atlas_size;                    // Tamaño del atlas
+        std::vector<Size2I32> char_size;        // Vector con los tamaños de cada caracter
 
         // Alto de fila de la fuente cargada
         uint32_t height;

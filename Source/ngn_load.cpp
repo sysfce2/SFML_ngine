@@ -1,7 +1,7 @@
 /******************************************************************************
 
     N'gine Lib for C++
-    *** Version 1.21.0+stable ***
+    *** Version 1.22.0-wip_0x01 ***
     Funciones de carga de archivos
 
     Proyecto iniciado el 1 de Febrero del 2016
@@ -534,6 +534,8 @@ NGN_TextFont* NGN_Load::TrueTypeFont(
     uint32_t outline_color                  // Color del borde
 ) {
 
+    /*** Paso 1: Crea un vector de texturas con todos los caracteres imprimibles de la fuente ***/
+
     // Crea un buffer temporal para la carga del archivo
     std::vector<uint8_t> buffer;
 
@@ -565,6 +567,9 @@ NGN_TextFont* NGN_Load::TrueTypeFont(
         return nullptr;
     }
 
+    // Si se aplica antialias, fija el modo
+    if (antialias) TTF_SetFontHinting(ttf, TTF_HINTING_NORMAL);
+
     // Elimina los datos del buffer del archivo temporal
     buffer.clear();
 
@@ -586,6 +591,13 @@ NGN_TextFont* NGN_Load::TrueTypeFont(
     SDL_Surface* surface = nullptr;
     SDL_Surface* surface_outline = nullptr;
 
+    // Vector temporal contenedor de los 256 caracteres de la fuente
+    std::vector<NGN_TextureData*> character;
+    character.reserve(256);
+    for (uint32_t i = 0; i < 256; i ++) {
+        character.push_back(new NGN_TextureData());
+    }
+
     // Crea el color por defecto del texto (blanco por defecto)
     SDL_Color _font_color;
     _font_color.a = 0xFF;
@@ -600,10 +612,6 @@ NGN_TextFont* NGN_Load::TrueTypeFont(
     _outline_color.g = (outline_color & 0x00FF00) >> 8;
     _outline_color.b = (outline_color & 0x0000FF);
 
-    // Marcos de dibujado de las superficies
-    SDL_Rect rect_in = {0, 0, 0, 0};
-    SDL_Rect rect_out = {0, 0, 0, 0};
-
     // Conversion de int a char
     unsigned char t[2];
     t[1] = '\0';
@@ -612,21 +620,21 @@ NGN_TextFont* NGN_Load::TrueTypeFont(
     for (uint32_t i = 0x20; i <= 0xFF; i ++) {
 
         // Vacia el contenido previo del surface
-        SDL_FreeSurface(surface);
-        if (outline > 0) SDL_FreeSurface(surface_outline);
+        if (surface) SDL_FreeSurface(surface);
+        if (surface_outline) SDL_FreeSurface(surface_outline);
         // Renderiza el caracter en el surface
         t[0] = i;
-        if (antialias) {
+        if (antialias) { 
             surface = TTF_RenderText_Blended(ttf, (const char*)t, _font_color);
             if (outline > 0) {
-                TTF_SetFontOutline(ttf, outline);
+                TTF_SetFontOutline(ttf, (int32_t)outline);
                 surface_outline = TTF_RenderText_Blended(ttf, (const char*)t, _outline_color);
                 TTF_SetFontOutline(ttf, 0);
             }
         } else {
             surface = TTF_RenderText_Solid(ttf, (const char*)t, _font_color);
             if (outline > 0) {
-                TTF_SetFontOutline(ttf, outline);
+                TTF_SetFontOutline(ttf, (int32_t)outline);
                 surface_outline = TTF_RenderText_Solid(ttf, (const char*)t, _outline_color);
                 TTF_SetFontOutline(ttf, 0);
             }
@@ -653,31 +661,40 @@ NGN_TextFont* NGN_Load::TrueTypeFont(
 
         // Si hay outline, haz la mezcla
         if (outline > 0) {
-            // Mezcla las dos surfaces
-            rect_in.x = outline;
-            rect_in.y = outline;
-            rect_in.w = surface->w;
-            rect_in.h = surface->h;
-            rect_out.x = 0;
-            rect_out.y = 0;
-            rect_out.w = surface_outline->w;
-            rect_out.h = surface_outline->h;
-            if (antialias) {
-                SDL_SetSurfaceBlendMode(surface_outline, SDL_BLENDMODE_BLEND);
-            } else {
-                SDL_SetSurfaceBlendMode(surface_outline, SDL_BLENDMODE_NONE);
+             // Si no hay antialias, los SURFACE generados seran SOLID (indexados), promocionalos a ARGB
+            if (!antialias) {
+                SDL_Surface* temp_surface_outline = SDL_ConvertSurfaceFormat(surface_outline, SDL_PIXELFORMAT_ARGB8888, 0);
+                if (temp_surface_outline) {
+                    SDL_FreeSurface(surface_outline);
+                    surface_outline = temp_surface_outline;
+                }
+                SDL_Surface* temp_surface = SDL_ConvertSurfaceFormat(surface, SDL_PIXELFORMAT_ARGB8888, 0);
+                if (temp_surface) {
+                    SDL_FreeSurface(surface);
+                    surface = temp_surface;
+                }
             }
-            SDL_BlitSurface(surface, &rect_out, surface_outline, &rect_in);
+            // Configura el destino
+            SDL_Rect dest_rect = {
+                (int32_t)outline,
+                (int32_t)outline,
+                surface->w,
+                surface->h
+            };
+            // Ajusta el modo de blending
+            SDL_SetSurfaceBlendMode(surface, SDL_BLENDMODE_BLEND);
+            // Blit pasando "nullptr" al origen. Esto copiara la totalidad del mismo a la coordenada dest_rect
+            SDL_BlitSurface(surface, nullptr, surface_outline, &dest_rect);
             // Pasalo a la textura
-            TTF_SetFontOutline(ttf, outline);
+            TTF_SetFontOutline(ttf, (int32_t)outline);
             if (
                 (surface_outline)
                 &&
                 (surface)
                 &&
-                (TTF_SizeText(ttf, (const char*)t, &font->character[i]->width, &font->character[i]->height) == 0)
+                (TTF_SizeText(ttf, (const char*)t, &character[i]->width, &character[i]->height) == 0)
             ) {
-                font->character[i]->gfx = SDL_CreateTextureFromSurface(ngn->graphics->renderer, surface_outline);
+                character[i]->gfx = SDL_CreateTextureFromSurface(ngn->graphics->renderer, surface_outline);
             }
             TTF_SetFontOutline(ttf, 0);
         } else {
@@ -685,27 +702,125 @@ NGN_TextFont* NGN_Load::TrueTypeFont(
             if (
                 (surface)
                 &&
-                (TTF_SizeText(ttf, (const char*)t, &font->character[i]->width, &font->character[i]->height) == 0)
+                (TTF_SizeText(ttf, (const char*)t, &character[i]->width, &character[i]->height) == 0)
             ) {
-                font->character[i]->gfx = SDL_CreateTextureFromSurface(ngn->graphics->renderer, surface);
+                character[i]->gfx = SDL_CreateTextureFromSurface(ngn->graphics->renderer, surface);
             }
         }
 
-        // Calcula la altura maxima del texto
-        if ((uint32_t)font->character[i]->height > font->height) {
-            font->height = (uint32_t)font->character[i]->height;
-            font->line_spacing = (font->height + 1);
+        // Almacena el tamaño del caracter
+        font->char_size[i].width = character[i]->width;
+        font->char_size[i].height = character[i]->height;
+
+        // Calcula la altura maxima de la celda de texto (y de la linea)
+        if (font->char_size[i].height > font->cell_size.height) {
+            font->cell_size.height = font->char_size[i].height;
+            font->height = font->cell_size.height;
+            font->line_spacing = (font->cell_size.height + 1);
+        }
+        // Calcula el ancho maximo de la celda de texto
+        if (font->char_size[i].width > font->cell_size.width) {
+            font->cell_size.width = font->char_size[i].width;
         }
 
     }
 
-    // Paso de limpieza
-    SDL_FreeSurface(surface);
-    SDL_FreeSurface(surface_outline);
+    // Paso de limpieza del buffer temporal
+    if (surface) SDL_FreeSurface(surface);
+    if (surface_outline) SDL_FreeSurface(surface_outline);
     TTF_CloseFont(ttf); ttf = nullptr;
 
     // Cierra el subsistema de TTF
     TTF_Quit();
+
+
+    /*** Paso 2: Genera un atlas de 16x16 celdas con los caracteres de la fuente ordenados para bitwise operations ***/
+
+    // Constantes
+    const uint32_t ATLAS_BITSHIFT = 4;
+    const uint32_t ATLAS_COLUMNS = (1 << ATLAS_BITSHIFT);
+    const uint32_t ATLAS_ROWS = (1 << ATLAS_BITSHIFT);
+    const uint32_t ATLAS_WIDTH = (ATLAS_COLUMNS * font->cell_size.width);
+    const uint32_t ATLAS_HEIGHT = (ATLAS_ROWS * font->cell_size.height);
+
+    // Almacena el tamaño del atlas
+    font->atlas_size.width = (int32_t)ATLAS_WIDTH;
+    font->atlas_size.height = (int32_t)ATLAS_HEIGHT;
+
+    // Crea la textura del tamaño calculado para el atlas
+    font->characters_atlas = SDL_CreateTexture(
+        ngn->graphics->renderer,
+        SDL_PIXELFORMAT_BGRA8888,
+        SDL_TEXTUREACCESS_TARGET,
+        (int32_t)ATLAS_WIDTH,
+        (int32_t)ATLAS_HEIGHT
+    );
+
+    // Si el atlas se ha creado con exito...
+    if (font->characters_atlas) {
+
+        // Fuerza que al atlas, nunca se le aplique filtrado
+        SDL_SetTextureScaleMode(font->characters_atlas, SDL_ScaleModeNearest);
+
+        // Selecciona la textura creada como target del renderer
+        SDL_SetRenderTarget(ngn->graphics->renderer, font->characters_atlas);
+
+        // Limpia la textura para que sea transparente
+        SDL_SetRenderDrawBlendMode(ngn->graphics->renderer, SDL_BLENDMODE_NONE);
+        SDL_SetRenderDrawColor(ngn->graphics->renderer, 0x00, 0x00, 0x00, 0x00);
+        SDL_RenderClear(ngn->graphics->renderer);
+
+        // Configura el blend mode del atlas
+        SDL_SetTextureBlendMode(font->characters_atlas, SDL_BLENDMODE_BLEND);
+
+        // Datos para el volcado de cada caracter en el atlas
+        SDL_Rect src = {0, 0, 0, 0};
+        SDL_Rect dst = {0, 0, 0, 0};
+        const uint8_t FIRST_CHAR = 0x20;
+        const uint8_t LAST_CHAR = 0xFF;
+
+        for (uint32_t i = FIRST_CHAR; i <= LAST_CHAR; i ++) {
+
+            if (!character[i]->gfx) continue;
+
+            // Calculo de posicion en el atlas usando bitwise (grid 16x16)
+            // col = 4 bits bajos del codigo ASCII
+            // row = 4 bits altos del codigo ASCII
+            uint32_t col = (i & 0x0F);
+            uint32_t row = ((i >> 4) & 0x0F);
+
+            // Calcula el origen
+            src.x = 0;
+            src.y = 0;
+            src.w = character[i]->width;
+            src.h = character[i]->height;
+
+            // Calcula el destino (el origen esta arriba a la izquierda)
+            dst.x = (int32_t)(col * font->cell_size.width);
+            dst.y = (int32_t)(row * font->cell_size.height);
+            dst.w = character[i]->width;
+            dst.h = character[i]->height;
+
+            // Render del caracter actual en el atlas
+            SDL_SetTextureBlendMode(character[i]->gfx, SDL_BLENDMODE_BLEND);
+            SDL_RenderCopy(ngn->graphics->renderer, character[i]->gfx, &src, &dst);
+
+        }
+
+        // Restaura el renderer a la pantalla
+        ngn->graphics->RenderToSelected();
+
+    } else {
+        ngn->log->Message("[NGN_Load error] Failed to create font atlas for <" + filepath + ">.");
+        delete font;
+        font = nullptr;
+    }
+
+    // Paso de limpieza del vector de caracteres
+    for (uint32_t i = 0; i < character.capacity(); i ++) {
+        delete character[i];
+    }
+    character.clear();
 
     // Devuelve la fuente cargada y convertida
     return font;

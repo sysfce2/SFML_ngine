@@ -1,7 +1,7 @@
 /******************************************************************************
 
     N'gine Lib for C++
-    *** Version 1.21.0+stable ***
+    *** Version 1.22.0-wip_0x01 ***
     Gestion del Renderer de SDL
 
     Proyecto iniciado el 1 de Febrero del 2016
@@ -293,6 +293,9 @@ void NGN_Render::TextLayer(NGN_TextLayer* layer, float position_x, float positio
 
     // Si no debe dibujarse...
     if (!layer->visible) return;
+
+    // Si hay que dibujarse y hay contenido pendiente de renderizar, hazlo ahora
+    layer->BlitText();
 
     // Calculos
     if ((position_x != (float)NGN_DEFAULT_VALUE) && (position_y != (float)NGN_DEFAULT_VALUE)) {
